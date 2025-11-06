@@ -1,0 +1,105 @@
+﻿[
+    {
+        "Name":  "Triggered alerts",
+        "Query":  "let Upn = \u0027{UserPrincipalName}\u0027;\r\nlet TimeFrame = {TimeFrame};\r\nAlertEvidence\r\n| where Timestamp \u003e ago(TimeFrame)\r\n| where EntityType in~ (\u0027User\u0027, \u0027Mailbox\u0027)\r\n| summarize arg_max(Timestamp, *) by AlertId\r\n| project AlertId, EntityType\r\n| join kind=inner AlertInfo on AlertId\r\n| extend AlertLink = strcat(\u0027https://security.microsoft.com/alerts/\u0027, AlertId)\r\n| project-reorder Timestamp, EntityType, Title, Category, Severity, DetectionSource, AlertLink\r\n| sort by Timestamp desc",
+        "Source":  "https://github.com/Bert-JanP/Hunting-Queries-Detection-Rules/blob/main/DFIR/XDR%20-%20DeviceAlerts.md",
+        "ResultCount":  0
+    },
+    {
+        "Name":  "User risk events",
+        "Query":  "let Upn = \u0027{UserPrincipalName}\u0027;\r\nlet TimeFrame = {TimeFrame};\r\nAADUserRiskEvents\r\n| where TimeGenerated \u003e ago(TimeFrame)\r\n| where UserPrincipalName =~ Upn\r\n| summarize arg_max(TimeGenerated, *) by UserPrincipalName\r\n| project TimeGenerated, UserPrincipalName, RiskState, RiskLevel, RiskDetail, RiskEventType",
+        "Source":  "https://github.com/Bert-JanP/Hunting-Queries-Detection-Rules/blob/main/Azure%20Active%20Directory/PotentialAiTMPhishing.md",
+        "ResultCount":  0
+    },
+    {
+        "Name":  "Potential AiTM sign-ins",
+        "Query":  "let Upn = \u0027{UserPrincipalName}\u0027;\r\nlet TimeFrame = {TimeFrame};\r\nSigninLogs\r\n| where TimeGenerated \u003e ago(TimeFrame)\r\n| where UserPrincipalName =~ Upn\r\n| extend deviceId = tostring(DeviceDetail.deviceId), displayName = tostring(DeviceDetail.displayName)\r\n| where isempty(deviceId)\r\n| summarize RiskLevels = make_set(RiskLevelDuringSignIn), ResultTypes = make_set(ResultType), IPs = make_set(IPAddress), Useragents = make_set(UserAgent) by CorrelationId, UserPrincipalName, IPAddress\r\n| where ResultTypes has_all (0, 50140) or ResultTypes has_all (0, 50074)\r\n| where RiskLevels has_any (\u0027low\u0027, \u0027medium\u0027, \u0027high\u0027)",
+        "Source":  "https://github.com/Bert-JanP/Hunting-Queries-Detection-Rules/blob/4eed989c75c01e4f27af4140a04bdc7eb86e6ab9/Functions/UserRiskStatus.md",
+        "ResultCount":  0
+    },
+    {
+        "Name":  "Successful sign-in from suspicious user agent",
+        "Query":  "let Upn = \u0027{UserPrincipalName}\u0027;\r\nlet TimeFrame = {TimeFrame};\r\nlet SuspiciousUserAgents = dynamic([\u0027axios\u0027, \u0027azurehound\u0027, \u0027Go-http-client\u0027, \u0027python-requests\u0027, \u0027node-fetch\u0027, \u0027agentaxios\u0027, \u0027BAV2ROPC\u0027]);\r\nAADSignInEventsBeta\r\n| where TimeGenerated \u003e ago(TimeFrame)\r\n| where AccountUpn =~ Upn\r\n| where UserAgent has_any (SuspiciousUserAgents)\r\n| where ErrorCode == 0\r\n| project-reorder ApplicationId, Application, UserAgent, AccountUpn",
+        "Source":  "tbd",
+        "ResultCount":  0
+    },
+    {
+        "Name":  "Successful signin from new country",
+        "Query":  "let Upn = \u0027{UserPrincipalName}\u0027;\r\nlet TimeFrame = {TimeFrame};\r\nlet KnownCountries = SigninLogs\r\n    | where UserPrincipalName =~ Upn\r\n    | where TimeGenerated \u003e ago(90d) and TimeGenerated \u003c ago(TimeFrame)\r\n    //Only filter on successful logins\r\n    | where ResultType == 0\r\n    | where isnotempty(Location)\r\n    | distinct Location;\r\nSigninLogs\r\n| where UserPrincipalName =~ Upn\r\n| where TimeGenerated \u003e ago(TimeFrame)\r\n| where ResultType == 0\r\n| where isnotempty(Location)\r\n| where Location !in (KnownCountries)\r\n| project TimeGenerated, Location, UserAgent, ResultType, Identity, UserPrincipalName, IPAddress",
+        "Source":  "https://github.com/Bert-JanP/Hunting-Queries-Detection-Rules/blob/main/Azure%20Active%20Directory/SuccessfulSignInFromNewCountry.md",
+        "ResultCount":  0
+    },
+    {
+        "Name":  "New user agent with signin attempts identified",
+        "Query":  "let Upn = \u0027{UserPrincipalName}\u0027;\r\nlet TimeFrame = {TimeFrame};\r\nlet KnownUserAgents = SigninLogs\r\n    | where UserPrincipalName =~ Upn\r\n    | where TimeGenerated \u003e ago(90d) and TimeGenerated \u003c ago(TimeFrame)\r\n    | distinct UserAgent;\r\nSigninLogs\r\n| where UserPrincipalName =~ Upn\r\n| where TimeGenerated \u003e ago(TimeFrame)\r\n| where UserAgent !in (KnownUserAgents)\r\n| project TimeGenerated, UserAgent, ResultType, Identity, UserPrincipalName, IPAddress",
+        "Source":  "https://github.com/Bert-JanP/Hunting-Queries-Detection-Rules/blob/main/Azure%20Active%20Directory/NewUserAgentUsed.md",
+        "ResultCount":  0
+    },
+    {
+        "Name":  "New Entra ID application with signin attempts identified",
+        "Query":  "let Upn = \u0027{UserPrincipalName}\u0027;\r\nlet TimeFrame = {TimeFrame};\r\nlet KnownApps = SigninLogs\r\n| where UserPrincipalName =~ Upn\r\n// Adjust the timerange depending on the retention period\r\n| where TimeGenerated \u003e ago(90d) and TimeGenerated \u003c ago(TimeFrame)\r\n| distinct AppId;\r\nSigninLogs\r\n| where UserPrincipalName =~ Upn\r\n| where TimeGenerated \u003e ago(TimeFrame)\r\n| where not(AppId in~ (KnownApps))\r\n// If the AppID is empty then it is a third party App.\r\n| extend IsExternalApp = iff(isempty(AppId), \u0027True\u0027, \u0027False\u0027)\r\n| project IsExternalApp, AppDisplayName, Identity, IPAddress, ClientAppUsed, UserPrincipalName",
+        "Source":  "https://github.com/Bert-JanP/Hunting-Queries-Detection-Rules/blob/main/Azure%20Active%20Directory/NewAuthenticationAppDetected.md",
+        "ResultCount":  0
+    },
+    {
+        "Name":  "Cloud persitence events",
+        "Query":  "let Upn = \u0027{UserPrincipalName}\u0027;\r\nlet TimeFrame = {TimeFrame};\r\n// Define PersistenceEvents, list can be appended with other events or your choosing\r\nlet PersistenceEvents = dynamic([\u0027add member\u0027, \u0027add device\u0027, \u0027register device\u0027, \u0027add service principal\u0027, \u0027update service principal\u0027, \u0027add user\u0027, \u0027enable account\u0027, \u0027add group\u0027, \u0027Invite external user\u0027, \u0027Add application\u0027, \u0027add app\u0027, \u0027User registered security info\u0027]);\r\nAuditLogs\r\n// Filter only on the RiskyUsers defined\r\n| where TimeGenerated \u003e ago(TimeFrame)\r\n| where InitiatedBy has Upn\r\n// Filter on DiscoveryEvents\r\n| where OperationName has_any (PersistenceEvents)\r\n| project TimeGenerated, Identity, OperationName, Category, ResultDescription, Result",
+        "Source":  "https://github.com/Bert-JanP/Hunting-Queries-Detection-Rules/blob/main/Azure%20Active%20Directory/CloudPersistenceActivityByUserAtRisk.md",
+        "ResultCount":  0
+    },
+    {
+        "Name":  "Successful device code sign-ins",
+        "Query":  "let Upn = \u0027{UserPrincipalName}\u0027;\r\nlet TimeFrame = {TimeFrame};\r\nSigninLogs\r\n// Filter only successful sign-ins\r\n| where TimeGenerated \u003e ago(TimeFrame)\r\n| where UserPrincipalName =~ Upn\r\n| where ResultType == 0\r\n| where AuthenticationProtocol == \u0027deviceCode\u0027\r\n// optional filter on unmanaged devices\r\n// | where isempty(DeviceDetail.deviceId)\r\n| extend operatingSystem = tostring(DeviceDetail.operatingSystem)\r\n// Optionally filter only on sign-ins with a risklevel associated with the sign-in\r\n//| where RiskLevelDuringSignIn != \u0027none\u0027\r\n| project-reorder TimeGenerated, UserPrincipalName, AuthenticationProtocol, ResultType, RiskLevelDuringSignIn, AppDisplayName, AppId, Location, IPAddress",
+        "Source":  "https://github.com/Bert-JanP/Hunting-Queries-Detection-Rules/blob/main/Azure%20Active%20Directory/SuccessfulDeviceCodeAuthenticationUnmanagedDevice.md",
+        "ResultCount":  0
+    },
+    {
+        "Name":  "Azure resources created",
+        "Query":  "let Upn = \u0027{UserPrincipalName}\u0027;\r\nlet TimeFrame = {TimeFrame};\r\nAzureActivity\r\n| where Caller =~ Upn\r\n| where TimeGenerated \u003e ago(TimeFrame)\r\n| where OperationNameValue endswith \u0027write\u0027\r\n| project TimeGenerated, OperationNameValue, ActivityStatusValue, SubscriptionId, ResourceGroup, Caller, CallerIpAddress",
+        "Source":  "tbd",
+        "ResultCount":  0
+    },
+    {
+        "Name":  "Azure resources deleted",
+        "Query":  "let Upn = \u0027{UserPrincipalName}\u0027;\r\nlet TimeFrame = {TimeFrame};\r\nAzureActivity\r\n| where Caller =~ Upn\r\n| where TimeGenerated \u003e ago(TimeFrame)\r\n| where OperationNameValue endswith \u0027delete\u0027\r\n| project TimeGenerated, OperationNameValue, ActivityStatusValue, SubscriptionId, ResourceGroup, Caller, CallerIpAddress",
+        "Source":  "tbd",
+        "ResultCount":  0
+    },
+    {
+        "Name":  "Azure resources actioned",
+        "Query":  "let Upn = \u0027{UserPrincipalName}\u0027;\r\nlet TimeFrame = {TimeFrame};\r\nAzureActivity\r\n| where Caller =~ Upn\r\n| where TimeGenerated \u003e ago(TimeFrame)\r\n| where OperationNameValue endswith \u0027action\u0027\r\n| project TimeGenerated, OperationNameValue, ActivityStatusValue, SubscriptionId, ResourceGroup, Caller, CallerIpAddress",
+        "Source":  "tbd",
+        "ResultCount":  0
+    },
+    {
+        "Name":  "Graph *.All permissions added",
+        "Query":  "let Upn = \u0027{UserPrincipalName}\u0027;\r\nlet TimeFrame = {TimeFrame};\r\nAuditLogs\r\n| where TimeGenerated \u003e ago(TimeFrame)\r\n| where Category == \u0027ApplicationManagement\u0027\r\n| where ActivityDisplayName in (\u0027Add delegated permission grant\u0027, \u0027Add app role assignment to service principal\u0027)\r\n| mv-expand TargetResources\r\n| where TargetResources.displayName == \u0027Microsoft Graph\u0027\r\n| mv-expand TargetResources.modifiedProperties\r\n| extend InitiatedByUserPrincipalName = InitiatedBy.user.userPrincipalName\r\n| where InitiatedByUserPrincipalName =~ Upn\r\n| extend AddedPermission = replace_string(tostring(TargetResources_modifiedProperties.newValue),\u0027\"\u0027,\u0027\u0027)\r\n| extend IP = todynamic(InitiatedBy).user.ipAddress\r\n| extend ServicePrincipalAppId = replace_string(tostring(todynamic(TargetResources).modifiedProperties[5].newValue),\u0027\"\u0027,\u0027\u0027)\r\n| where AddedPermission endswith \u0027.All\u0027\r\n| project-reorder TimeGenerated, InitiatedByUserPrincipalName, ActivityDisplayName, AddedPermission, IP, ServicePrincipalAppId",
+        "Source":  "https://github.com/Bert-JanP/Hunting-Queries-Detection-Rules/blob/main/Azure%20Active%20Directory/AllGraphPermissionsAdded.md",
+        "ResultCount":  0
+    },
+    {
+        "Name":  "Graph ReadWrite permissions added",
+        "Query":  "let Upn = \u0027{UserPrincipalName}\u0027;\r\nlet TimeFrame = {TimeFrame};\r\nAuditLogs\r\n| where TimeGenerated \u003e ago(TimeFrame)\r\n| where Category == \u0027ApplicationManagement\u0027\r\n| where ActivityDisplayName in (\u0027Add delegated permission grant\u0027, \u0027Add app role assignment to service principal\u0027)\r\n| mv-expand TargetResources\r\n| where TargetResources.displayName == \u0027Microsoft Graph\u0027\r\n| mv-expand TargetResources.modifiedProperties\r\n| extend InitiatedByUserPrincipalName = InitiatedBy.user.userPrincipalName\r\n| where InitiatedByUserPrincipalName =~ Upn\r\n| extend AddedPermission = replace_string(tostring(TargetResources_modifiedProperties.newValue),\u0027\"\u0027,\u0027\u0027)\r\n| extend IP = todynamic(InitiatedBy).user.ipAddress\r\n| extend ServicePrincipalAppId = replace_string(tostring(todynamic(TargetResources).modifiedProperties[5].newValue),\u0027\"\u0027,\u0027\u0027)\r\n| where AddedPermission has \u0027ReadWrite\u0027\r\n| project-reorder TimeGenerated, InitiatedByUserPrincipalName, ActivityDisplayName, AddedPermission, IP, ServicePrincipalAppId",
+        "Source":  "https://github.com/Bert-JanP/Hunting-Queries-Detection-Rules/blob/main/Azure%20Active%20Directory/AllGraphPermissionsAdded.md",
+        "ResultCount":  0
+    },
+    {
+        "Name":  "Conditional Access add, update, delete events",
+        "Query":  "let Upn = \u0027{UserPrincipalName}\u0027;\r\nlet TimeFrame = {TimeFrame};\r\nAuditLogs\r\n| where TimeGenerated \u003e ago(TimeFrame)\r\n| where OperationName has \u0027conditional access policy\u0027\r\n| extend DeletedPolicy = TargetResources.[0].displayName, Actor = InitiatedBy.user.userPrincipalName\r\n| where Actor =~ Upn\r\n| project TimeGenerated, Actor, DeletedPolicy, TargetResources",
+        "Source":  "https://github.com/Bert-JanP/Hunting-Queries-Detection-Rules/blob/main/Azure%20Active%20Directory/ConditionalAccess%20-%20AddPolicy.md",
+        "ResultCount":  0
+    },
+    {
+        "Name":  "AzureHound activities",
+        "Query":  "let Upn = \u0027{UserPrincipalName}\u0027;\r\nlet TimeFrame = {TimeFrame};\r\nlet WhitelistedObjects = dynamic([\u0027obj1\u0027, \u0027obj2\u0027]);\r\nlet UniqueRequestThreshold = 500; // Depends on Entra ID tentant size. You can use the function 0.5 * TotalAzure Resources to get this number. KQL: arg(\u0027\u0027).Resources | count\r\nlet ResourceThreshold = 4;\r\nlet ReconResources = dynamic([\u0027organization\u0027,\u0027groups\u0027,\u0027devices\u0027,\u0027applications\u0027,\u0027users\u0027,\u0027rolemanagement\u0027,\u0027serviceprincipals\u0027]);\r\nlet ObjectId = SigninLogs\r\n| where TimeGenerated \u003e ago(TimeFrame)\r\n| where UserPrincipalName =~ Upn\r\n| distinct UserId;\r\nGraphAPIAuditEvents\r\n| where AccountObjectId in~ (ObjectId)\r\n| where TimeGenerated \u003e ago(TimeFrame)\r\n| where RequestMethod == \u0027GET\u0027\r\n| where ResponseStatusCode == 200\r\n| extend ParsedUri = tostring(parse_url(RequestUri).Path)\r\n| extend GraphAPIPath = tolower(replace_string(ParsedUri, \u0027//\u0027, \u0027/\u0027))\r\n| extend GraphAPIResource = tostring(split(GraphAPIPath, \u0027/\u0027)[2])\r\n| where GraphAPIResource in (ReconResources)\r\n// Filter whitelist\r\n| where not(AccountObjectId in (WhitelistedObjects))\r\n| summarize UniqueRequests = dcount(ClientRequestId), Requests = make_set(RequestUri, 1000), Paths = make_set(GraphAPIPath), Resources = make_set(GraphAPIResource), UniqueResourceCount = dcount(GraphAPIResource) by AccountObjectId, bin(TimeGenerated, 1h)\r\n| where UniqueRequests \u003e= UniqueRequestThreshold and UniqueResourceCount \u003e= ResourceThreshold",
+        "Source":  "https://github.com/Bert-JanP/Hunting-Queries-Detection-Rules/blob/main/Graph%20API/GraphAPIAuditEvents%20-%20AzureHound.md",
+        "ResultCount":  0
+    },
+    {
+        "Name":  "Email collection - Big Yellow Taxi 🚕",
+        "Query":  "let Upn = \u0027{UserPrincipalName}\u0027;\r\nlet TimeFrame = {TimeFrame};\r\nlet DefaultInboxFolders = pack_array(\u0027Inbox\u0027, \u0027Drafts\u0027, \u0027Sent Items\u0027, \u0027Archive\u0027, \u0027rss\u0027, \u0027Inbox\u0027, \u0027Deleted Items\u0027, \u0027Junk Email\u0027);\r\nlet BinSize = 30m;\r\nlet MaxSuccess = 10;\r\nlet MailBoxSyncOperations = CloudAppEvents\r\n// List all MailItemsAccessed that are created because of a sync audit activity.\r\n// The audit volume for sync operations is huge. So, instead of generating an audit record for each mail item that\u0027s synched, we generate an audit event for the mail folder containing items that were synched and assume that all mail items in the synched folder have been compromised.\r\n// Info: https://learn.microsoft.com/en-us/purview/audit-log-investigate-accounts?view=o365-worldwide#auditing-sync-access\r\n| where ActionType == \u0027MailItemsAccessed\u0027\r\n| extend MailAccessType = toint(RawEventData.RecordType), IsThrottled = tostring(parse_json(RawEventData.OperationCount))\r\n| where MailAccessType == 2\r\n// Parse synchronised folders. All FolderNames should be considered compromised.\r\n| extend ParentFolder = parse_json(RawEventData.Item).ParentFolder\r\n| extend SyncedFolder = tostring(ParentFolder.Name), Path = tostring(ParentFolder.Path), MailboxGuid = tostring(parse_json(RawEventData.MailboxGuid)), UserId = tolower(parse_json(RawEventData.UserId))\r\n| where UserId =~ Upn\r\n| summarize TotalFolers = dcount(SyncedFolder), Folders = make_set(SyncedFolder) by bin(TimeGenerated, BinSize), UserId, IPAddress, MailboxGuid;\r\nlet LargeSyncOperations = MailBoxSyncOperations\r\n// Filter \u0026 enrich results\r\n| where TotalFolers \u003e= array_length(DefaultInboxFolders)\r\n| extend GeoIPInfo = geo_info_from_ip_address(IPAddress)\r\n| extend country = tostring(parse_json(GeoIPInfo).country);\r\nLargeSyncOperations\r\n| join kind=inner (AADSignInEventsBeta | where TimeGenerated \u003e startofday(ago(TimeFrame)) and LogonType has \u0027interactiveUser\u0027 | project ErrorCode, AccountUpn = tolower(AccountUpn), IPAddress | summarize TotalSuccess = countif(ErrorCode == 0), TotalFailed = countif(ErrorCode != 0) by AccountUpn, IPAddress) on $left.IPAddress == $right.IPAddress, $left.UserId == $right.AccountUpn\r\n// Filter only on IPs with low successrate \r\n| where TotalSuccess \u003c= MaxSuccess",
+        "Source":  "https://github.com/Bert-JanP/Hunting-Queries-Detection-Rules/blob/main/Office%20365/BigYellowTaxi%20-%20SignIn.md",
+        "ResultCount":  0
+    }
+]
+
