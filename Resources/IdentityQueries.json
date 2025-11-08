@@ -85,7 +85,7 @@
     },
     {
         "Name":  "Conditional Access add, update, delete events",
-        "Query":  "let Upn = \u0027{UserPrincipalName}\u0027;\r\nlet TimeFrame = {TimeFrame};\r\nAuditLogs\r\n| where TimeGenerated \u003e ago(TimeFrame)\r\n| where OperationName has \u0027conditional access policy\u0027\r\n| extend DeletedPolicy = TargetResources.[0].displayName, Actor = InitiatedBy.user.userPrincipalName\r\n| where Actor =~ Upn\r\n| project TimeGenerated, Actor, DeletedPolicy, TargetResources",
+        "Query":  "let Upn = \u0027{UserPrincipalName}\u0027;\r\nlet TimeFrame = {TimeFrame};\r\nAuditLogs\r\n| where TimeGenerated \u003e ago(TimeFrame)\r\n| where OperationName has \u0027conditional access policy\u0027\r\n| extend ImpactedPolicy = TargetResources.[0].displayName, Actor = InitiatedBy.user.userPrincipalName\r\n| where Actor =~ Upn\r\n| project TimeGenerated, Actor, OperationName, DeletedPolicy, TargetResources",
         "Source":  "https://github.com/Bert-JanP/Hunting-Queries-Detection-Rules/blob/main/Azure%20Active%20Directory/ConditionalAccess%20-%20AddPolicy.md",
         "ResultCount":  0
     },
