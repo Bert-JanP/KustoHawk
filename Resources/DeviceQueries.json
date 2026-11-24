@@ -162,9 +162,9 @@
         "ResultCount":  0
     },
     {
-        "Name":  "Abuse.ch ThreatFox malware domain hits",
-        "Query":  "let Device = \u0027{DeviceId}\u0027;\r\nlet TimeFrame = {TimeFrame};\r\nlet ThreatIntelFeed = externaldata(LineInfo: string)[\"https://threatfox.abuse.ch/downloads/hostfile/\"] with (format=\u0027txt\u0027, ignoreFirstRecord=True);\r\nlet IPRegex = \u0027[0-9]{1,3}\\\\.[0-9]{1,3}\\\\.[0-9]{1,3}\\\\.[0-9]{1,3}\u0027;\r\nlet MalwareDomains = materialize (\r\n     ThreatIntelFeed\r\n     | where LineInfo matches regex IPRegex\r\n     | extend domain = extract(@\u0027127.0.0.1(.*)\u0027, 1 , LineInfo)\r\n     | distinct domain\r\n     | take 10000 // Max Size allowed\r\n     );\r\nDeviceNetworkEvents\r\n| where DeviceId =~ Device\r\n| where Timestamp \u003e ago(TimeFrame)\r\n| where RemoteUrl has_any (MalwareDomains)\r\n| project Timestamp, RemoteUrl, RemoteIP, DeviceName, InitiatingProcessCommandLine, InitiatingProcessFileName, InitiatingProcessAccountDomain, InitiatingProcessAccountName",
-        "Source":  "https://github.com/Bert-JanP/Hunting-Queries-Detection-Rules/blob/main/Threat%20Hunting/TI%20Feed%20-%20ThreatfoxMalwareDomains.md",
+        "Name":  "NetAPI compromised domain hits",
+        "Query":  "let Device = \u0027{DeviceId}\u0027;\r\nlet TimeFrame = {TimeFrame};\r\nlet ThreatIntelFeed = externaldata(Domain: string)[@\"https://netapi.com/api2/?method=compromised\u0026dataset_type=url\"] with (format=\"txt\", ignoreFirstRecord=True);\r\nlet MalwareDomains = materialize (\r\n     ThreatIntelFeed\r\n     | extend Domain = tolower(trim(@\"\\s\", Domain))\r\n     | where isnotempty(Domain)\r\n     | distinct Domain\r\n     );\r\nDeviceNetworkEvents\r\n| where DeviceId =~ Device\r\n| where Timestamp \u003e ago(TimeFrame)\r\n| where isnotempty(RemoteUrl)\r\n| extend Host = tolower(tostring(parse_url(iff(RemoteUrl has \"://\", RemoteUrl, strcat(\"http://\", RemoteUrl))).Host))\r\n| extend Host = trim_start(@\"www\\.\", Host)\r\n| where Host in (MalwareDomains)\r\n| project Timestamp, RemoteUrl, RemoteIP, DeviceName, InitiatingProcessCommandLine, InitiatingProcessFileName, InitiatingProcessAccountDomain, InitiatingProcessAccountName",
+        "Source":  "https://github.com/Bert-JanP/Hunting-Queries-Detection-Rules/blob/main/Threat%20Hunting/TI%20Feed%20-%20NetAPICompromisedDomains.md",
         "ResultCount":  0
     },
     {
